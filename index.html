@@ -1,1 +1,242 @@
-Test
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>My Video Player</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+Mono+TC&family=Roboto:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css" />
+  <style type="text/css">
+    .roboto {
+      font-family: "Roboto", sans-serif;
+      font-optical-sizing: auto;
+      font-weight: 240;
+      font-style: normal;
+      font-size: small;
+      letter-spacing: 1px;
+    }
+
+    .lxgw {
+      font-family: "LXGW WenKai Mono TC", monospace;
+      font-weight: 400;
+      font-style: normal;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="row">
+      <div class="col-md-8">
+        <div class="ratio ratio-16x9">
+          <div id="_player"></div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="text-center my-5">
+          <h5 id="pending_duration"></h5>
+          <button type="button" data-bs-toggle="offcanvas" data-bs-target="#offcanvasRight" class="btn btn-success display-3 rounded-circle btn-lg border-secondary border-5"><i class="bi bi-music-note-list"></i> <i class="bi bi-arrow-bar-right"></i> <span class="d-block">list...</span></button>
+        </div>
+        <div class="my-3">
+          <label for="formFile" class="form-label">Open Playlist Excel File</label>
+          <input class="form-control" type="file" id="excelFileInput" accept=".xlsx, .xls">
+        </div>
+        <div class="offcanvas offcanvas-end" tabindex="-1" id="offcanvasRight">
+          <div class="offcanvas-header">
+            <h5 class="offcanvas-title mx-auto" id="offcanvasRightLabel"></h5>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+          </div>
+          <div class="offcanvas-body">
+            <ul class="list-group list-group-flush" id="play_list"></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="row row-cols-1 row-cols-md-4 g-2" id="vid_list"></div>
+    </div>
+    <div class="toast-container position-fixed top-0 start-0 p-3">
+      <div id="toast" class="toast">
+        <div class="toast-header">
+          <strong class="me-auto">Play Time</strong>
+        </div>
+        <div class="toast-body">
+          Play time including the cueued video is <span id="play_time"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+  <script type="text/javascript">
+    window.onload = () => {
+      const vid_list = document.getElementById("vid_list");
+      const play_list = document.getElementById("play_list");
+      const toast = document.getElementById("toast");
+      const play_time = document.getElementById("play_time");
+      const pending_duration = document.getElementById("pending_duration");
+      document.getElementById('excelFileInput').addEventListener('change', handleFileSelect, false);
+      function handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          // Convert sheet data to JSON array
+          const jsonData = XLSX.utils.sheet_to_json(worksheet);
+          jsonData.forEach(video => {
+            vid_list.insertAdjacentHTML("beforeend",
+              `
+                        <div class="col">
+                          <div class="card h-100">
+                            <img src="https://img.youtube.com/vi/${video.yt_id}/0.jpg" class="card-img-top" />
+                            <div class="card-body">
+                              <div class="form-check form-switch"">
+                                <input id="chk_${video.yt_id}" data-id="${video.yt_id}" data-title="${video.title}" data-duration="${durationToSeconds(video.duration)}" class="form-check-input" type="checkbox"  style="cursor:pointer" onclick="javascript:return video_selected_global(event);" /> <span class="lxgw">${video.duration} min</span>
+                              </div>
+                              <h5 class="card-title text-truncate"></h5>
+                              <p class="roboto lead">${video.title}</p>
+                            </div>
+                            <div class="card-footer text-center">
+                              <small class="text-body-secondary font-monospace">${video.yt_id}</small>
+                            </div>
+                          </div>
+                        </div>
+                `
+            )
+          });
+        };
+        reader.readAsArrayBuffer(file);
+      }
+      function video_selected(event) {
+        let duration_of_cued = 0;
+        if (event.target.checked) {
+          if ((0 == play_list.childElementCount) && !_is_video_cued) {
+            yt_id_cued = event.target.dataset.id;
+            player.cueVideoById(yt_id_cued);
+            duration_of_cued = parseInt(event.target.dataset.duration);
+          } else {
+            play_list.insertAdjacentHTML("beforeend",
+              `<li class="list-group-item" id="pl_${event.target.dataset.id}" data-duration="${event.target.dataset.duration}">
+                              <div class="hstack gap-3">
+                                <div>${event.target.dataset.title}</div>
+                                <div class="ms-auto"><a class="icon-link" onclick="javascript:setTimeout(() => {document.getElementById('pl_${event.target.dataset.id}').remove(); document.getElementById('chk_${event.target.dataset.id}').checked = false; show_toast_global(0);}, 10)"><i class="bi bi-trash3"></i></a></div>
+                              </div>
+                            </li>`);
+          }
+        } else {
+          const queued_item = document.getElementById(`pl_${event.target.dataset.id}`);
+          if (queued_item) {
+            queued_item.remove();
+          } else {
+            const first_queued = play_list.firstElementChild;
+            if (!first_queued) {
+              setTimeout(() => {
+                window.location.reload();
+              }, 10);
+            } else {
+              yt_id_cued = first_queued.id.slice(3);
+              if (YT.PlayerState.CUED == player.getPlayerState()) {
+                player.cueVideoById(yt_id_cued);
+                duration_of_cued = parseInt(first_queued.dataset.duration);
+              } else player.loadVideoById(yt_id_cued);
+              first_queued.remove();
+            }
+          }
+        }
+        show_toast(duration_of_cued);
+      }
+      function get_queued_duration(duration) {
+        if (0 == duration) duration = player.getDuration() - player.getCurrentTime();
+        play_list.querySelectorAll('li').forEach(listItem => {
+          duration += parseInt(listItem.dataset.duration);
+        });
+        const HH = `${Math.floor(duration / 3600)}`.padStart(2, '0');
+        const MM = `${Math.floor(duration / 60) % 60}`.padStart(2, '0');
+        const SS = `${Math.floor(duration % 60)}`.padStart(2, '0');
+        pending_duration.innerText = duration > 3600 ? [HH, MM, SS].join(':') : [MM, SS].join(':');
+        return pending_duration.innerText;
+      }
+      function show_toast(duration) {
+        setTimeout(() => {
+          play_time.innerText = get_queued_duration(duration);
+          bootstrap.Toast.getOrCreateInstance(toast).show();
+        }, 10);
+      }
+      setInterval(() => {
+        if (YT.PlayerState.PLAYING == player.getPlayerState()) {
+          pending_duration.innerText = get_queued_duration(0);
+        }
+      }, 1000);
+      show_toast_global = show_toast;
+      video_selected_global = video_selected;
+    }
+    let show_toast_global, video_selected_global;
+  </script>
+  <script>
+    var tag = document.createElement('script');
+    tag.src = "https://www.youtube.com/iframe_api";
+    var firstScriptTag = document.getElementsByTagName('script')[0];
+    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+    var player;
+    var _is_video_cued = false;
+    var yt_id_cued = "";
+    function onYouTubeIframeAPIReady() {
+      player = new YT.Player('_player', {
+        playerVars: {
+          'playsinline': 1
+        },
+        events: {
+          'onStateChange': onPlayerStateChange
+        }
+      });
+    }
+    function onPlayerStateChange(event) {
+      if (event.data == YT.PlayerState.CUED) {
+        _is_video_cued = true;
+      } else if (event.data == YT.PlayerState.ENDED) {
+        const first_queued = play_list.firstElementChild;
+        if (first_queued) {
+          const yt_id = first_queued.id.slice(3);
+          player.loadVideoById(yt_id);
+          first_queued.remove();
+          document.getElementById(`chk_${yt_id_cued}`).checked = false;
+          yt_id_cued = yt_id;
+        } else {
+          setTimeout(() => {
+            window.location.reload();
+          }, 10);
+        }
+      }
+    }
+  </script>
+  <script type="text/javascript">
+    function durationToSeconds(durationString) {
+      if (!durationString) {
+        return null;
+      }
+      const parts = durationString.split(':');
+      if ((parts.length != 3) && (parts.length != 2)) {
+        console.warn("Invalid duration string format. Expected HH:MM:SS.");
+        return null;
+      }
+      const hours = parts.length == 3 ? parseInt(parts[0], 10) : 0;
+      const minutes = parts.length == 3 ? parseInt(parts[1], 10) : parseInt(parts[0], 10);
+      const seconds = parts.length == 3 ? parseInt(parts[2], 10) : parseInt(parts[1], 10);
+      if (isNaN(hours) || isNaN(minutes) || isNaN(seconds)) {
+        console.warn("Invalid number in duration string.");
+        return null;
+      }
+      return (hours * 3600) + (minutes * 60) + seconds;
+    }
+  </script>
+  
+</body>
+</html>
+
